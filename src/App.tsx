@@ -123,14 +123,14 @@ export default function App() {
             <h2 className="text-3xl font-bold tracking-tight">
               Ready to get started?
             </h2>
-            <p className="mt-3 opacity-80">
+            <p className="mt-3">
               Join thousands of builders shipping with Acme today.
             </p>
             <Button size="lg" variant="secondary" className="mt-8">
               Start free trial
               <HugeiconsIcon icon={ArrowRight01Icon} size={18} />
             </Button>
-            <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm opacity-80">
+            <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
               {perks.map((p) => (
                 <li key={p} className="flex items-center gap-1.5">
                   <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} />
