@@ -1,6 +1,6 @@
-# Landing Page
+# Dashboard
 
-A responsive marketing landing page with a hero section, feature grid, and call-to-action, built with React, TypeScript, and Tailwind CSS.
+A responsive finance dashboard ("Finexy") with a top nav, balance and wallets, KPI tiles, an SVG profit/loss chart, spending limit, bank cards, and a searchable recent-activities table, built with React, TypeScript, Tailwind CSS, and shadcn/ui. Data is mocked in `src/App.tsx`.
 
 **Live site:** https://jirakid-a11y.github.io/landing-page/
 
@@ -17,10 +17,10 @@ A responsive marketing landing page with a hero section, feature grid, and call-
 
 ```
 src/
-  App.tsx            Page content (header, hero, features, CTA)
+  App.tsx            Dashboard layout, mock data, and chart
   main.tsx           App entry point
   index.css          Tailwind and theme tokens
-  components/ui/     shadcn/ui components (Button, Badge, Card)
+  components/ui/     shadcn/ui components (Avatar, Badge, Button, Card, Checkbox, Input, Progress, Select, Table, ...)
   lib/utils.ts       Shared helpers
 public/              Static assets (favicon)
 .github/workflows/   GitHub Pages deployment
