@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Responsive, useContainerWidth } from 'react-grid-layout'
+import 'react-grid-layout/css/styles.css'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Add01Icon,
+  BarChartIcon,
   AirplaneModeIcon,
   AlertCircleIcon,
   ArrowDown01Icon,
@@ -10,6 +13,7 @@ import {
   ArrowUpDownIcon,
   ArrowUpRight01Icon,
   Calendar03Icon,
+  ChartLineData01Icon,
   CheckmarkCircle02Icon,
   Coins01Icon,
   ComputerIcon,
@@ -19,12 +23,16 @@ import {
   Delete02Icon,
   DollarCircleIcon,
   EuroIcon,
+  ExchangeDollarIcon,
   File01Icon,
   FilterHorizontalIcon,
+  FloppyDiskIcon,
   FlashIcon,
   HelpCircleIcon,
   Hotel01Icon,
+  Invoice01Icon,
   Layers01Icon,
+  LockIcon,
   Logout03Icon,
   Mail01Icon,
   MasterCardIcon,
@@ -33,14 +41,19 @@ import {
   MoreVerticalIcon,
   Moon02Icon,
   Notification03Icon,
+  NoteEditIcon,
+  PieChartIcon,
   PoundIcon,
+  RefreshIcon,
   Search01Icon,
   Settings02Icon,
   ShoppingBasket01Icon,
   SmartPhone01Icon,
   SnowflakeIcon,
   SparklesIcon,
+  SquareUnlock01Icon,
   Sun01Icon,
+  Target01Icon,
   UserGroupIcon,
   ViewIcon,
   Wallet01Icon,
@@ -86,6 +99,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { BillsWidget, BreakdownWidget, GoalsWidget, NotesWidget, RatesWidget, WeeklyWidget } from '@/components/extra-widgets'
+import { WidgetGallery, type GalleryItem } from '@/components/widget-gallery'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -184,6 +199,254 @@ const money = (n: number, symbol = '$') =>
   `${symbol}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const moneyInt = (n: number) => `$${n.toLocaleString('en-US')}`
 
+
+type Layouts = Record<string, { i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number }[]>
+
+// Visible cell grid: boxes snap to 32px-tall cells with 16px gaps (24 / 12 / 6 columns).
+const ROW_H = 32
+const GAP = 16
+const COLS = { lg: 24, md: 12, sm: 6 }
+const BREAKPOINTS = { lg: 900, md: 640, sm: 0 }
+const LAYOUT_KEY = 'finexy-layouts-v5'
+type Bp = keyof typeof COLS
+type WidgetKey =
+  | 'balance'
+  | 'stats'
+  | 'income'
+  | 'limit'
+  | 'cards'
+  | 'activities'
+  | 'goals'
+  | 'bills'
+  | 'breakdown'
+  | 'rates'
+  | 'notes'
+  | 'weekly'
+const item = (i: WidgetKey, x: number, y: number, w: number, h: number, minW = 3, minH = 3) => ({ i, x, y, w, h, minW, minH })
+
+const WIDGETS: { key: WidgetKey; label: string; description: string; icon: IconType; gradient: string }[] = [
+  { key: 'balance', label: 'Balance', description: 'Transfer, request and switch currency', icon: Wallet01Icon, gradient: 'bg-linear-to-br from-neutral-600 to-neutral-900' },
+  { key: 'stats', label: 'Overview', description: 'Earnings, spending, income and revenue', icon: DashboardSquare01Icon, gradient: 'bg-linear-to-br from-orange-400 to-red-500' },
+  { key: 'income', label: 'Total Income', description: 'Profit and loss by month', icon: ChartLineData01Icon, gradient: 'bg-linear-to-br from-sky-400 to-blue-600' },
+  { key: 'limit', label: 'Spending Limit', description: 'Track your monthly limit', icon: Coins01Icon, gradient: 'bg-linear-to-br from-amber-400 to-orange-500' },
+  { key: 'cards', label: 'My Cards', description: 'Select, freeze or add cards', icon: CreditCardIcon, gradient: 'bg-linear-to-br from-fuchsia-500 to-purple-700' },
+  { key: 'activities', label: 'Activities', description: 'Search, filter and sort orders', icon: File01Icon, gradient: 'bg-linear-to-br from-emerald-400 to-teal-600' },
+  { key: 'goals', label: 'Savings Goals', description: 'Track what you are saving for', icon: Target01Icon, gradient: 'bg-linear-to-br from-rose-400 to-pink-600' },
+  { key: 'bills', label: 'Upcoming Bills', description: 'See and pay what is due', icon: Invoice01Icon, gradient: 'bg-linear-to-br from-indigo-400 to-violet-600' },
+  { key: 'breakdown', label: 'Spending Breakdown', description: 'Where your money goes', icon: PieChartIcon, gradient: 'bg-linear-to-br from-cyan-400 to-sky-600' },
+  { key: 'rates', label: 'Exchange Rates', description: 'Currency rates at a glance', icon: ExchangeDollarIcon, gradient: 'bg-linear-to-br from-lime-400 to-green-600' },
+  { key: 'notes', label: 'Quick Notes', description: 'Jot things down as you go', icon: NoteEditIcon, gradient: 'bg-linear-to-br from-yellow-300 to-amber-500' },
+  { key: 'weekly', label: 'Weekly Activity', description: 'Transactions by day of the week', icon: BarChartIcon, gradient: 'bg-linear-to-br from-slate-500 to-slate-700' },
+]
+
+// These start "in the back" and are added from the Add widget gallery.
+const DEFAULT_HIDDEN: WidgetKey[] = ['goals', 'bills', 'breakdown', 'rates', 'notes', 'weekly']
+
+// Default arrangement mirrors the original fixed layout: three equal tiles on top,
+// then a left stack (limit + cards) beside the wide activities table.
+const DEFAULT_LAYOUTS: Layouts = {
+  lg: [
+    item('balance', 0, 0, 8, 8, 5, 5),
+    item('stats', 8, 0, 8, 8, 4, 4),
+    item('income', 16, 0, 8, 8, 5, 5),
+    item('limit', 0, 8, 8, 3, 4, 2),
+    item('cards', 0, 11, 8, 6, 4, 4),
+    item('activities', 8, 8, 16, 9, 8, 5),
+    item('goals', 0, 40, 8, 7, 4, 4),
+    item('bills', 8, 40, 8, 8, 4, 4),
+    item('breakdown', 16, 40, 8, 8, 4, 4),
+    item('rates', 0, 48, 8, 7, 4, 4),
+    item('notes', 8, 48, 8, 6, 4, 4),
+    item('weekly', 16, 48, 8, 7, 4, 4),
+  ],
+  md: [
+    item('balance', 0, 0, 6, 8, 4, 5),
+    item('stats', 6, 0, 6, 8, 3, 4),
+    item('income', 0, 8, 12, 7, 4, 5),
+    item('limit', 0, 15, 4, 3, 3, 2),
+    item('cards', 4, 15, 8, 6, 3, 4),
+    item('activities', 0, 21, 12, 9, 6, 5),
+    item('goals', 0, 40, 6, 7, 3, 4),
+    item('bills', 6, 40, 6, 8, 3, 4),
+    item('breakdown', 0, 48, 6, 8, 3, 4),
+    item('rates', 6, 48, 6, 7, 3, 4),
+    item('notes', 0, 56, 6, 6, 3, 4),
+    item('weekly', 6, 56, 6, 7, 3, 4),
+  ],
+  sm: [
+    item('balance', 0, 0, 6, 9, 3, 5),
+    item('stats', 0, 9, 6, 8, 3, 4),
+    item('income', 0, 17, 6, 7, 3, 5),
+    item('limit', 0, 24, 6, 3, 3, 2),
+    item('cards', 0, 27, 6, 6, 3, 4),
+    item('activities', 0, 33, 6, 9, 3, 5),
+    item('goals', 0, 40, 6, 7, 3, 4),
+    item('bills', 0, 47, 6, 8, 3, 4),
+    item('breakdown', 0, 55, 6, 8, 3, 4),
+    item('rates', 0, 63, 6, 7, 3, 4),
+    item('notes', 0, 70, 6, 6, 3, 4),
+    item('weekly', 0, 76, 6, 7, 3, 4),
+  ],
+}
+
+const bpFor = (w: number): Bp => (w >= BREAKPOINTS.lg ? 'lg' : w >= BREAKPOINTS.md ? 'md' : 'sm')
+
+// Hidden widgets are ignored so the signature matches what the grid reports.
+const layoutSig = (l: Layouts, hidden: WidgetKey[]) =>
+  JSON.stringify({
+    l: Object.fromEntries(
+      Object.entries(l).map(([bp, arr]) => [
+        bp,
+        arr
+          .filter((i) => !hidden.includes(i.i as WidgetKey))
+          .sort((a, b) => a.i.localeCompare(b.i))
+          .map((i) => [i.i, i.x, i.y, i.w, i.h]),
+      ]),
+    ),
+    h: [...hidden].sort(),
+  })
+
+const loadSaved = (): { layouts: Layouts; hidden: WidgetKey[] } => {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (raw) {
+      const v = JSON.parse(raw)
+      return { layouts: { ...DEFAULT_LAYOUTS, ...v.layouts }, hidden: v.hidden ?? DEFAULT_HIDDEN }
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return { layouts: DEFAULT_LAYOUTS, hidden: DEFAULT_HIDDEN }
+}
+
+// Paper-swing while dragging: the widget hangs from the point you grabbed, tilts against
+// your horizontal motion, and springs back with a little overshoot when you stop.
+const SWING = { gain: 3, max: 5, stiffness: 0.07, damping: 0.84 }
+
+function useSwing() {
+  const st = useRef({
+    el: null as HTMLElement | null,
+    angle: 0,
+    vel: 0,
+    scale: 1,
+    x: 0,
+    lastX: 0,
+    lastT: 0,
+    vx: 0,
+    factor: 1,
+    active: false,
+    raf: 0,
+  })
+
+  const loop = (now: number) => {
+    const m = st.current
+    const el = m.el
+    if (!el) return
+    const dt = Math.max(1, now - m.lastT)
+    m.vx += ((m.x - m.lastX) / dt - m.vx) * 0.3 // px/ms, smoothed
+    m.lastX = m.x
+    m.lastT = now
+    const target = m.active ? Math.max(-SWING.max, Math.min(SWING.max, m.vx * SWING.gain * m.factor)) : 0
+    m.vel = (m.vel + (target - m.angle) * SWING.stiffness) * SWING.damping
+    m.angle += m.vel
+    m.scale += ((m.active ? 1.03 : 1) - m.scale) * 0.2
+    el.style.transform = `scale(${m.scale.toFixed(4)}) rotate(${m.angle.toFixed(3)}deg)`
+    if (!m.active && Math.abs(m.angle) < 0.05 && Math.abs(m.vel) < 0.01 && Math.abs(m.scale - 1) < 0.002) {
+      el.style.transform = ''
+      el.style.transformOrigin = ''
+      m.el = null
+      return
+    }
+    m.raf = requestAnimationFrame(loop)
+  }
+
+  const point = (e: Event) => {
+    const t = e as MouseEvent & TouchEvent
+    return t.touches?.[0] ?? t.changedTouches?.[0] ?? t
+  }
+
+  return {
+    start(item: HTMLElement | null | undefined, e: Event) {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      const card = item?.querySelector<HTMLElement>('[data-slot="card"]')
+      if (!card) return
+      const m = st.current
+      cancelAnimationFrame(m.raf)
+      if (m.el && m.el !== card) {
+        m.el.style.transform = ''
+        m.el.style.transformOrigin = ''
+      }
+      const r = card.getBoundingClientRect()
+      const p = point(e)
+      const gx = p.clientX - r.left
+      const gy = p.clientY - r.top
+      // Grabbing above the middle: the body hangs below and lags; below the middle: reversed.
+      const f = (r.height / 2 - gy) / (r.height / 2)
+      m.factor = Math.sign(f || 1) * Math.max(Math.abs(f), 0.4)
+      card.style.transformOrigin = `${gx}px ${gy}px`
+      Object.assign(m, { el: card, angle: 0, vel: 0, scale: 1, x: p.clientX, lastX: p.clientX, lastT: e.timeStamp, vx: 0, active: true })
+      m.raf = requestAnimationFrame(loop)
+    },
+    move(e: Event) {
+      st.current.x = point(e).clientX
+    },
+    stop() {
+      st.current.active = false
+    },
+  }
+}
+
+function useSize<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+  const [size, setSize] = useState({ w: 480, h: 190 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => {
+      const { width, height } = e.contentRect
+      if (width > 0 && height > 0) setSize({ w: Math.round(width), h: Math.round(height) })
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return [ref, size] as const
+}
+
+// Hold-and-drag area: a thin strip along the widget's top edge (inset from the rounded corners).
+function DragStrip() {
+  return (
+    <div
+      className="drag-handle edit-only absolute inset-x-5 top-0 z-10 h-5 cursor-grab rounded-b-xl transition-colors hover:bg-orange-400/15 active:cursor-grabbing"
+      title="Hold and drag to move"
+    />
+  )
+}
+
+function CellGrid({ cols, rows, visible }: { cols: number; rows: number; visible: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        'pointer-events-none absolute inset-0 overflow-hidden transition-opacity duration-300',
+        visible ? 'opacity-100' : 'opacity-0',
+      )}
+    >
+      <div
+        className="grid"
+        style={{
+          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+          gridAutoRows: `${ROW_H}px`,
+          gap: GAP,
+        }}
+      >
+        {Array.from({ length: cols * rows }, (_, i) => (
+          <div key={i} className="rounded-lg bg-orange-100/70 dark:bg-orange-400/10" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function Icon({ icon, size = 18, className }: { icon: IconType; size?: number; className?: string }) {
   return <HugeiconsIcon icon={icon} size={size} className={className} />
 }
@@ -215,14 +478,13 @@ function Delta({ up, children }: { up: boolean; children: string }) {
 function IncomeChart() {
   const [hover, setHover] = useState<number | null>(null)
   const [show, setShow] = useState({ profit: true, loss: true })
-  const W = 480
-  const H = 190
-  const left = 40
+  const [box, { w: W, h: H }] = useSize<HTMLDivElement>()
+  const left = W < 300 ? 28 : 40
   const bottom = 24
   const max = 50
-  const plotH = H - bottom - 8
-  const slot = (W - left) / CHART.length
-  const barW = 26
+  const plotH = Math.max(20, H - bottom - 8)
+  const slot = Math.max(6, (W - left) / CHART.length)
+  const barW = Math.max(8, Math.min(40, slot * 0.55))
   const y = (v: number) => 8 + plotH - (v / max) * plotH
   const h = (v: number) => (v / max) * plotH
 
@@ -231,7 +493,7 @@ function IncomeChart() {
   const other = (k: 'profit' | 'loss') => (k === 'profit' ? 'loss' : 'profit')
 
   return (
-    <div className="rounded-2xl bg-muted p-3">
+    <div className="flex h-full min-h-0 flex-col rounded-2xl bg-muted p-3">
       <div className="mb-2 flex items-center justify-between text-xs">
         <span className="font-medium">Profit and Loss</span>
         <span className="flex items-center gap-1">
@@ -253,15 +515,15 @@ function IncomeChart() {
           ))}
         </span>
       </div>
-      <div className="relative">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Profit and loss by month">
+      <div ref={box} className="relative min-h-[120px] flex-1">
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="absolute inset-0" role="img" aria-label="Profit and loss by month">
           <defs>
             <pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <rect width="5" height="5" fill="#f4602f" />
               <line x1="0" y1="0" x2="0" y2="5" stroke="#fff" strokeOpacity="0.35" strokeWidth="1.6" />
             </pattern>
           </defs>
-          {[0, 10, 20, 30, 40, 50].map((t) => (
+          {(plotH < 100 ? [0, 25, 50] : [0, 10, 20, 30, 40, 50]).map((t) => (
             <g key={t}>
               <line x1={left} x2={W} y1={y(t)} y2={y(t)} className="stroke-border" strokeDasharray="3 4" />
               <text x={left - 8} y={y(t) + 3} textAnchor="end" className="fill-muted-foreground text-[9px]">
@@ -295,7 +557,7 @@ function IncomeChart() {
                   textAnchor="middle"
                   className={cn('text-[9px]', active ? 'fill-foreground font-semibold' : 'fill-muted-foreground')}
                 >
-                  {d.m}
+                  {slot >= 30 || i % 2 === 0 ? d.m : ''}
                 </text>
               </g>
             )
@@ -341,7 +603,7 @@ function BankCard({
       onClick={onSelect}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect()}
       className={cn(
-        'group relative flex h-36 w-60 shrink-0 cursor-pointer flex-col justify-between rounded-2xl p-4 text-white transition duration-200 hover:-translate-y-1',
+        'group relative flex aspect-[5/3] h-[clamp(5rem,60cqh,13rem)] shrink-0 cursor-pointer flex-col justify-between rounded-2xl p-4 text-white transition duration-200 hover:-translate-y-1',
         card.variant === 'dark' ? 'bg-neutral-900' : 'bg-linear-to-br from-orange-500 to-red-500',
         selected && 'ring-2 ring-orange-400 ring-offset-2 ring-offset-card',
         card.frozen && 'opacity-60 grayscale',
@@ -354,7 +616,7 @@ function BankCard({
           {card.variant === 'dark' ? <Icon icon={MasterCardIcon} size={24} /> : <Icon icon={SparklesIcon} size={20} />}
         </div>
       </div>
-      <div className="flex items-end justify-between text-[10px] text-white/60">
+      <div className="hh-190 flex items-end justify-between text-[10px] text-white/60">
         <div>
           Card Number
           <div className="text-xs text-white">**** **** {card.last}</div>
@@ -387,6 +649,19 @@ function BankCard({
 
 export default function App() {
   const [dark, setDark] = useState(false)
+  const { width, containerRef, mounted } = useContainerWidth()
+  const [initial] = useState(loadSaved)
+  const [layouts, setLayouts] = useState<Layouts>(initial.layouts)
+  const [hidden, setHidden] = useState<WidgetKey[]>(initial.hidden)
+  const [savedSig, setSavedSig] = useState(() => layoutSig(initial.layouts, initial.hidden))
+  const [locked, setLocked] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [pageOrigin, setPageOrigin] = useState('50% 50%')
+  const [dragging, setDragging] = useState<WidgetKey | null>(null)
+  const [resizing, setResizing] = useState(false)
+  const [overDelete, setOverDelete] = useState(false)
+  const deleteZone = useRef<HTMLDivElement>(null)
+  const swing = useSwing()
   const [nav, setNav] = useState('Overview')
   const [rail, setRail] = useState(0)
 
@@ -415,6 +690,15 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!galleryOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [galleryOpen])
+
+  useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
   }, [dark])
 
@@ -425,6 +709,84 @@ export default function App() {
   }, [toast])
 
   const cur = RATES[currency]
+  const bp = bpFor(width)
+  const current = (layouts[bp] ?? []).filter((i) => !hidden.includes(i.i as WidgetKey))
+  const rowsShown = Math.min(150, Math.max(1, ...current.map((i) => i.y + i.h)))
+  const adjusting = !locked && (dragging !== null || resizing)
+  const dirty = layoutSig(layouts, hidden) !== savedSig
+
+  const addWidget = (k: WidgetKey) => {
+    setLayouts(
+      (l) =>
+        Object.fromEntries(
+          (Object.keys(DEFAULT_LAYOUTS) as Bp[]).map((b) => [
+            b,
+            [
+              ...(l[b] ?? []).filter((i) => i.i !== k),
+              {
+                ...DEFAULT_LAYOUTS[b].find((i) => i.i === k)!,
+                // drop it just below everything that's currently on the board
+                y: Math.max(
+                  0,
+                  ...(l[b] ?? []).filter((i) => !hidden.includes(i.i as WidgetKey) && i.i !== k).map((i) => i.y + i.h),
+                ),
+              },
+            ],
+          ]),
+        ) as Layouts,
+    )
+    setHidden((h) => h.filter((x) => x !== k))
+  }
+  const openGallery = () => {
+    setPageOrigin(`50% ${window.scrollY + window.innerHeight / 2}px`)
+    setGalleryOpen(true)
+  }
+  const handleGalleryAdd = (key: string) => {
+    const k = key as WidgetKey
+    addWidget(k)
+    setGalleryOpen(false)
+    setToast(`Added ${WIDGETS.find((w) => w.key === k)?.label}`)
+    setTimeout(
+      () => document.querySelector(`[data-widget="${k}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      500,
+    )
+  }
+  const galleryItems: GalleryItem[] = WIDGETS.map((w) => {
+    const d = DEFAULT_LAYOUTS.lg.find((i) => i.i === w.key)!
+    return {
+      key: w.key,
+      label: w.label,
+      description: w.description,
+      icon: w.icon,
+      gradient: w.gradient,
+      size: `${d.w} × ${d.h}`,
+      added: !hidden.includes(w.key),
+    }
+  }).sort((a, b) => Number(a.added) - Number(b.added))
+
+  // Is the pointer over the floating delete zone? (slightly inflated hit area)
+  const pointerOverDelete = (e: Event) => {
+    const r = deleteZone.current?.getBoundingClientRect()
+    if (!r) return false
+    const t = e as MouseEvent & TouchEvent
+    const pt = t.touches?.[0] ?? t.changedTouches?.[0] ?? t
+    const m = 24
+    return pt.clientX >= r.left - m && pt.clientX <= r.right + m && pt.clientY >= r.top - m && pt.clientY <= r.bottom + m
+  }
+  const saveLayout = () => {
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify({ layouts, hidden }))
+    } catch {
+      /* storage unavailable */
+    }
+    setSavedSig(layoutSig(layouts, hidden))
+    setToast('Layout saved')
+  }
+  const restoreLayout = () => {
+    setLayouts(DEFAULT_LAYOUTS)
+    setHidden(DEFAULT_HIDDEN)
+    setToast('Default layout restored')
+  }
   const unread = notes.length
 
   const rows = useMemo(() => {
@@ -514,10 +876,427 @@ export default function App() {
     />
   )
 
+  const widgetEls: Record<WidgetKey, React.ReactNode> = {
+    balance: (
+<div key="balance" data-widget="balance" className="group/widget">
+<DragStrip />
+<Card className="wc h-full rounded-3xl py-5 [--card-spacing:--spacing(5)]">
+                  <CardContent className="min-h-0 flex-1 space-y-4 overflow-auto">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-muted-foreground">Total Balance</div>
+                        <div className="mt-1 text-[length:clamp(1.4rem,min(7.2cqw,9cqh),3.2rem)] font-medium tracking-tight tabular-nums">
+                          {money(totalUsd * cur.rate, cur.symbol)}
+                        </div>
+                        <div className="hh-260 mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Delta up>5%</Delta> than last month
+                        </div>
+                      </div>
+                      <Select value={currency} onValueChange={(v) => setCurrency(v as CurrencyCode)}>
+                        <SelectTrigger size="sm" className="w-24 rounded-full @max-[280px]:hidden">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(RATES) as CurrencyCode[]).map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="cq-btns grid grid-cols-2 gap-3">
+                      <Button size="lg" className="h-11 rounded-full" onClick={() => openDialog('transfer')}>
+                        <Icon icon={ArrowLeftRightIcon} size={16} /> <span className="@max-[300px]:hidden">Transfer</span>
+                      </Button>
+                      <Button
+                        size="lg"
+                        variant="secondary"
+                        className="h-11 rounded-full"
+                        onClick={() => openDialog('request')}
+                      >
+                        <Icon icon={ArrowLeftRightIcon} size={16} /> <span className="@max-[300px]:hidden">Request</span>
+                      </Button>
+                    </div>
+
+                    <div className="hh-300 rounded-2xl bg-muted p-3">
+                      <div className="mb-2 text-xs">
+                        <span className="font-medium">Wallets</span>
+                        <span className="text-muted-foreground @max-[340px]:hidden"> | Total 6 wallets</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 @max-[300px]:grid-cols-1">
+                        {wallets.map((w) => (
+                          <button
+                            type="button"
+                            key={w.code}
+                            onClick={() => setCurrency(w.code)}
+                            className={cn(
+                              'rounded-xl bg-card p-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-sm',
+                              currency === w.code && 'ring-2 ring-orange-400',
+                            )}
+                          >
+                            <div className="flex items-center justify-between text-xs font-medium">
+                              <span className="flex items-center gap-1">
+                                <Icon icon={RATES[w.code].icon} size={14} /> {w.code}
+                              </span>
+                              <Icon icon={MoreVerticalIcon} size={12} className="text-muted-foreground" />
+                            </div>
+                            <div className="mt-2 text-[11px] font-medium tabular-nums @min-[560px]:text-sm">
+                              {money(w.amount, RATES[w.code].symbol)}
+                            </div>
+                            <div className="text-[9px] text-muted-foreground @max-[380px]:hidden @min-[560px]:text-xs">Limit is {w.limit}</div>
+                            <div className={cn('text-[9px] @max-[380px]:hidden @min-[560px]:text-xs', w.active ? 'text-emerald-600' : 'text-red-500')}>
+                              {w.active ? 'Active' : 'Inactive'}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+</Card>
+</div>
+    ),
+    stats: (
+<div key="stats" data-widget="stats" className="group/widget">
+<DragStrip />
+<Card className="wc h-full rounded-3xl py-3 [--card-spacing:--spacing(3)]">
+                  <CardContent className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-3 overflow-auto @max-[260px]:grid-cols-1 @max-[260px]:grid-rows-[repeat(4,minmax(6rem,1fr))] @min-[620px]:grid-cols-4 @min-[620px]:grid-rows-1">
+                    {STATS.map((s) => (
+                      <div
+                        key={s.label}
+                        className={cn(
+                          'flex min-h-0 flex-col justify-between rounded-2xl p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-md @max-[340px]:p-2.5',
+                          s.featured ? 'bg-linear-to-br from-orange-400 to-red-500 text-white' : 'bg-muted',
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2 text-sm">
+                          <span className={s.featured ? 'text-white/90' : 'text-muted-foreground'}>{s.label}</span>
+                          <span
+                            className={cn(
+                              'grid size-8 shrink-0 place-items-center rounded-full @max-[300px]:hidden',
+                              s.featured ? 'bg-white/25' : 'bg-card',
+                            )}
+                          >
+                            <Icon icon={s.icon} size={15} />
+                          </span>
+                        </div>
+                        <div className="mt-3 text-[length:clamp(1.1rem,min(7cqw,8.2cqh),2.6rem)] font-medium tracking-tight tabular-nums @min-[620px]:text-[length:clamp(1.1rem,min(3.4cqw,8.2cqh),2.2rem)]">
+                          {cur.symbol}
+                          {Math.round(s.value * cur.rate).toLocaleString()}
+                        </div>
+                        <div className="hh-200 mt-2 flex items-center gap-1.5 text-[11px]">
+                          {s.featured ? (
+                            <Badge className="gap-0.5 border-0 bg-white/25 text-white">
+                              <Icon icon={ArrowUpRight01Icon} size={12} />
+                              {s.delta}
+                            </Badge>
+                          ) : (
+                            <Delta up={s.up}>{s.delta}</Delta>
+                          )}
+                          <span className={cn(s.featured ? 'text-white/80' : 'text-muted-foreground', '@max-[340px]:hidden')}>This month</span>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+</Card>
+</div>
+    ),
+    income: (
+<div key="income" data-widget="income" className="group/widget">
+<DragStrip />
+<Card className="wc h-full rounded-3xl py-5 [--card-spacing:--spacing(5)]">
+                  <CardHeader className="hh-220">
+                    <CardTitle className="text-xl @max-[300px]:text-base">Total Income</CardTitle>
+                    <CardDescription className="hh-300 @max-[320px]:hidden">View your income in a certain period of time</CardDescription>
+                  </CardHeader>
+                  <CardContent className="min-h-0 flex-1">
+                    <IncomeChart />
+                  </CardContent>
+</Card>
+</div>
+    ),
+    limit: (
+<div key="limit" data-widget="limit" className="group/widget">
+<DragStrip />
+<Card className="wc h-full rounded-3xl py-5 [--card-spacing:--spacing(5)]">
+                    <CardContent className="min-h-0 flex-1 space-y-3 overflow-auto">
+                      <div className="hh-80 text-[length:clamp(0.8rem,3.4cqw,1.2rem)] font-medium">Monthly Spending Limit</div>
+                      <Progress value={Math.min(100, (spent / 5500) * 100)} className="h-[clamp(0.5rem,14cqh,1.25rem)] [&>div]:bg-orange-500" />
+                      <div className="flex justify-between text-[11px] @min-[520px]:text-sm">
+                        <span className="font-medium tabular-nums">
+                          {money(spent)} <span className="font-normal text-muted-foreground @max-[300px]:hidden">spent out of</span>
+                        </span>
+                        <span className="text-muted-foreground">$5,500.00</span>
+                      </div>
+                    </CardContent>
+</Card>
+</div>
+    ),
+    cards: (
+<div key="cards" data-widget="cards" className="group/widget">
+<DragStrip />
+<Card className="wc h-full rounded-3xl py-5 [--card-spacing:--spacing(5)]">
+                    <CardContent className="min-h-0 flex-1 space-y-4 overflow-auto">
+                      <div className="hh-170 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="grid size-10 place-items-center rounded-xl bg-muted">
+                            <Icon icon={CreditCardIcon} />
+                          </span>
+                          <span className="font-medium">My Cards</span>
+                        </div>
+                        <Button variant="secondary" size="sm" className="rounded-full" onClick={addCard}>
+                          <Icon icon={Add01Icon} size={12} /> <span className="@max-[300px]:hidden">Add new</span>
+                        </Button>
+                      </div>
+                      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pt-3 pb-3">
+                        {cards.map((c) => (
+                          <BankCard
+                            key={c.id}
+                            card={c}
+                            selected={cardId === c.id}
+                            onSelect={() => setCardId(c.id)}
+                            onFreeze={() =>
+                              setCards((cs) => cs.map((x) => (x.id === c.id ? { ...x, frozen: !x.frozen } : x)))
+                            }
+                          />
+                        ))}
+                      </div>
+                    </CardContent>
+</Card>
+</div>
+    ),
+    activities: (
+<div key="activities" data-widget="activities" className="group/widget">
+<DragStrip />
+<Card className="wc h-full rounded-3xl py-5 [--card-spacing:--spacing(5)]">
+                  <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+                    <div className="hh-220 flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-xl font-medium @max-[420px]:text-base">Recent Activities</h2>
+                      <div className="flex items-center gap-2">
+                        <div className="relative @max-[470px]:hidden">
+                          <Icon
+                            icon={Search01Icon}
+                            size={16}
+                            className="absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+                          />
+                          <Input
+                            id="activity-search"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search"
+                            className="h-9 w-44 rounded-full pl-9 @max-[640px]:w-32"
+                          />
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="h-9 rounded-full">
+                              <span className="@max-[420px]:hidden">Filter</span>
+                              {statusFilter.length < STATUSES.length && (
+                                <Badge className="size-4 justify-center rounded-full p-0 text-[10px]">
+                                  {statusFilter.length}
+                                </Badge>
+                              )}
+                              <Icon icon={FilterHorizontalIcon} size={14} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuLabel>Status</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {STATUSES.map((s) => (
+                              <DropdownMenuCheckboxItem
+                                key={s}
+                                checked={statusFilter.includes(s)}
+                                onSelect={(e) => e.preventDefault()}
+                                onCheckedChange={(v) =>
+                                  setStatusFilter((f) => (v ? [...f, s] : f.filter((x) => x !== s)))
+                                }
+                              >
+                                <span className={cn('mr-1 size-1.5 rounded-full', STATUS_DOT[s])} />
+                                {s}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => setStatusFilter(STATUSES)}>Reset filter</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+
+                    {selected.length > 0 && (
+                      <div className="flex items-center justify-between rounded-xl bg-orange-50 px-3 py-2 text-xs text-orange-900 dark:bg-orange-950 dark:text-orange-100">
+                        {selected.length} selected
+                        <div className="flex gap-1">
+                          <Button size="xs" variant="ghost" onClick={() => setSelected([])}>
+                            Clear
+                          </Button>
+                          <Button size="xs" variant="destructive" onClick={() => deleteRows(selected)}>
+                            <Icon icon={Delete02Icon} size={12} /> Delete
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="min-h-0 flex-1 overflow-auto rounded-2xl border">
+                      <Table>
+                        <TableHeader className="bg-muted">
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={allSelected}
+                                onCheckedChange={(v) =>
+                                  setSelected((s) =>
+                                    v
+                                      ? [...new Set([...s, ...rows.map((r) => r.id)])]
+                                      : s.filter((id) => !rows.some((r) => r.id === id)),
+                                  )
+                                }
+                                aria-label="Select all"
+                              />
+                            </TableHead>
+                            <TableHead className="@max-[700px]:hidden">Order ID</TableHead>
+                            <TableHead>Activity</TableHead>
+                            <TableHead>
+                              <button type="button" className="flex items-center gap-1" onClick={() => toggleSort('price')}>
+                                Price {sortIcon('price')}
+                              </button>
+                            </TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="@max-[560px]:hidden">
+                              <button type="button" className="flex items-center gap-1" onClick={() => toggleSort('date')}>
+                                Date {sortIcon('date')}
+                              </button>
+                            </TableHead>
+                            <TableHead className="w-8" />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rows.length === 0 && (
+                            <TableRow className="hover:bg-transparent">
+                              <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                                No activities match your filters.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          {rows.map((a) => (
+                            <TableRow key={a.id} data-state={selected.includes(a.id) ? 'selected' : undefined}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selected.includes(a.id)}
+                                  onCheckedChange={(v) =>
+                                    setSelected((s) => (v ? [...s, a.id] : s.filter((x) => x !== a.id)))
+                                  }
+                                  aria-label={`Select ${a.id}`}
+                                />
+                              </TableCell>
+                              <TableCell className="text-muted-foreground @max-[700px]:hidden">{a.id}</TableCell>
+                              <TableCell>
+                                <span className="flex items-center gap-2.5 font-medium">
+                                  <span className={cn('grid size-6 place-items-center rounded-md', a.color)}>
+                                    <Icon icon={a.icon} size={14} />
+                                  </span>
+                                  {a.name}
+                                </span>
+                              </TableCell>
+                              <TableCell className="tabular-nums">{moneyInt(a.price)}</TableCell>
+                              <TableCell>
+                                <span className="flex items-center gap-1.5">
+                                  <span className={cn('size-1.5 rounded-full', STATUS_DOT[a.status])} />
+                                  {a.status}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground @max-[560px]:hidden">{fmtDate(a.date)}</TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${a.id}`}>
+                                      <Icon icon={MoreHorizontalIcon} size={16} className="text-muted-foreground" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      onSelect={() =>
+                                        setToast(`${a.name} — ${moneyInt(a.price)} · ${a.status}`)
+                                      }
+                                    >
+                                      <Icon icon={ViewIcon} size={16} /> View details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={() => {
+                                        navigator.clipboard?.writeText(a.id)
+                                        setToast(`Copied ${a.id}`)
+                                      }}
+                                    >
+                                      <Icon icon={Copy01Icon} size={16} /> Copy ID
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem variant="destructive" onSelect={() => deleteRows([a.id])}>
+                                      <Icon icon={Delete02Icon} size={16} /> Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+</Card>
+</div>
+    ),
+    goals: (
+      <div key="goals" data-widget="goals" className="group/widget">
+<DragStrip />
+        <GoalsWidget />
+      </div>
+    ),
+    bills: (
+      <div key="bills" data-widget="bills" className="group/widget">
+<DragStrip />
+        <BillsWidget />
+      </div>
+    ),
+    breakdown: (
+      <div key="breakdown" data-widget="breakdown" className="group/widget">
+<DragStrip />
+        <BreakdownWidget />
+      </div>
+    ),
+    rates: (
+      <div key="rates" data-widget="rates" className="group/widget">
+<DragStrip />
+        <RatesWidget />
+      </div>
+    ),
+    notes: (
+      <div key="notes" data-widget="notes" className="group/widget">
+<DragStrip />
+        <NotesWidget />
+      </div>
+    ),
+    weekly: (
+      <div key="weekly" data-widget="weekly" className="group/widget">
+<DragStrip />
+        <WeeklyWidget />
+      </div>
+    ),
+  }
+
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="min-h-screen bg-neutral-200/70 p-3 sm:p-6 dark:bg-neutral-950">
-        <div className="mx-auto max-w-[1280px] rounded-[2rem] bg-neutral-100 p-4 sm:p-5 dark:bg-neutral-900">
+      <div className="min-h-screen bg-neutral-100 dark:bg-neutral-900">
+        <div
+          className="w-full p-4 sm:p-6"
+          style={{
+            transformOrigin: pageOrigin,
+            transform: galleryOpen ? 'scale(0.92)' : undefined,
+            filter: galleryOpen ? 'blur(8px)' : undefined,
+            opacity: galleryOpen ? 0.55 : undefined,
+            pointerEvents: galleryOpen ? 'none' : undefined,
+            transition: 'transform 520ms cubic-bezier(0.22, 1, 0.36, 1), filter 420ms ease, opacity 420ms ease',
+          }}
+        >
           {/* Top bar */}
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 rounded-full bg-card py-1.5 pr-4 pl-1.5">
@@ -710,363 +1489,87 @@ export default function App() {
             </aside>
 
             <main className="min-w-0 flex-1">
-              <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Good morning, Sajibur</h1>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                Stay on top of your tasks, monitor progress, and track status.
-              </p>
-
-              <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)_minmax(0,1.1fr)]">
-                {/* Balance */}
-                <Card className="rounded-3xl py-5 [--card-spacing:--spacing(5)]">
-                  <CardContent className="space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="text-muted-foreground">Total Balance</div>
-                        <div className="mt-1 text-3xl font-medium tracking-tight tabular-nums">
-                          {money(totalUsd * cur.rate, cur.symbol)}
-                        </div>
-                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                          <Delta up>5%</Delta> than last month
-                        </div>
-                      </div>
-                      <Select value={currency} onValueChange={(v) => setCurrency(v as CurrencyCode)}>
-                        <SelectTrigger size="sm" className="w-24 rounded-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(Object.keys(RATES) as CurrencyCode[]).map((c) => (
-                            <SelectItem key={c} value={c}>
-                              {c}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button size="lg" className="h-11 rounded-full" onClick={() => openDialog('transfer')}>
-                        <Icon icon={ArrowLeftRightIcon} size={16} /> Transfer
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">Good morning, Sajibur</h1>
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    Stay on top of your tasks, monitor progress, and track status.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="rounded-full bg-orange-500 text-white hover:bg-orange-600"
+                    onClick={openGallery}
+                  >
+                    <Icon icon={Add01Icon} size={14} /> Add widget
+                  </Button>
+                  <Button
+                    variant={locked ? 'default' : 'outline'}
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      setLocked((l) => !l)
+                      setToast(locked ? 'Layout unlocked — drag or resize widgets' : 'Layout locked')
+                    }}
+                  >
+                    <Icon icon={locked ? LockIcon : SquareUnlock01Icon} size={14} />
+                    {locked ? 'Locked' : 'Edit layout'}
+                  </Button>
+                  {!locked && (
+                    <>
+                      <Button variant="outline" size="sm" className="rounded-full" onClick={restoreLayout}>
+                        <Icon icon={RefreshIcon} size={14} /> Restore
                       </Button>
-                      <Button
-                        size="lg"
-                        variant="secondary"
-                        className="h-11 rounded-full"
-                        onClick={() => openDialog('request')}
-                      >
-                        <Icon icon={ArrowLeftRightIcon} size={16} /> Request
+                      <Button size="sm" className="rounded-full" disabled={!dirty} onClick={saveLayout}>
+                        <Icon icon={FloppyDiskIcon} size={14} /> Save layout
                       </Button>
-                    </div>
-
-                    <div className="rounded-2xl bg-muted p-3">
-                      <div className="mb-2 text-xs">
-                        <span className="font-medium">Wallets</span>
-                        <span className="text-muted-foreground"> | Total 6 wallets</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {wallets.map((w) => (
-                          <button
-                            type="button"
-                            key={w.code}
-                            onClick={() => setCurrency(w.code)}
-                            className={cn(
-                              'rounded-xl bg-card p-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-sm',
-                              currency === w.code && 'ring-2 ring-orange-400',
-                            )}
-                          >
-                            <div className="flex items-center justify-between text-xs font-medium">
-                              <span className="flex items-center gap-1">
-                                <Icon icon={RATES[w.code].icon} size={14} /> {w.code}
-                              </span>
-                              <Icon icon={MoreVerticalIcon} size={12} className="text-muted-foreground" />
-                            </div>
-                            <div className="mt-2 text-[11px] font-medium tabular-nums">
-                              {money(w.amount, RATES[w.code].symbol)}
-                            </div>
-                            <div className="text-[9px] text-muted-foreground">Limit is {w.limit}</div>
-                            <div className={cn('text-[9px]', w.active ? 'text-emerald-600' : 'text-red-500')}>
-                              {w.active ? 'Active' : 'Inactive'}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Stat tiles */}
-                <Card className="rounded-3xl py-3 [--card-spacing:--spacing(3)]">
-                  <CardContent className="grid h-full grid-cols-2 gap-3">
-                    {STATS.map((s) => (
-                      <div
-                        key={s.label}
-                        className={cn(
-                          'flex flex-col justify-between rounded-2xl p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-md',
-                          s.featured ? 'bg-linear-to-br from-orange-400 to-red-500 text-white' : 'bg-muted',
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-2 text-sm">
-                          <span className={s.featured ? 'text-white/90' : 'text-muted-foreground'}>{s.label}</span>
-                          <span
-                            className={cn(
-                              'grid size-8 shrink-0 place-items-center rounded-full',
-                              s.featured ? 'bg-white/25' : 'bg-card',
-                            )}
-                          >
-                            <Icon icon={s.icon} size={15} />
-                          </span>
-                        </div>
-                        <div className="mt-6 text-3xl font-medium tracking-tight tabular-nums">
-                          {cur.symbol}
-                          {Math.round(s.value * cur.rate).toLocaleString()}
-                        </div>
-                        <div className="mt-2 flex items-center gap-1.5 text-[11px]">
-                          {s.featured ? (
-                            <Badge className="gap-0.5 border-0 bg-white/25 text-white">
-                              <Icon icon={ArrowUpRight01Icon} size={12} />
-                              {s.delta}
-                            </Badge>
-                          ) : (
-                            <Delta up={s.up}>{s.delta}</Delta>
-                          )}
-                          <span className={s.featured ? 'text-white/80' : 'text-muted-foreground'}>This month</span>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-
-                {/* Income chart */}
-                <Card className="rounded-3xl py-5 [--card-spacing:--spacing(5)] md:col-span-2 xl:col-span-1">
-                  <CardHeader>
-                    <CardTitle className="text-xl">Total Income</CardTitle>
-                    <CardDescription>View your income in a certain period of time</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <IncomeChart />
-                  </CardContent>
-                </Card>
+                    </>
+                  )}
+                </div>
               </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.1fr)]">
-                <div className="min-w-0 space-y-4">
-                  <Card className="rounded-3xl py-5 [--card-spacing:--spacing(5)]">
-                    <CardContent className="space-y-3">
-                      <div className="font-medium">Monthly Spending Limit</div>
-                      <Progress value={Math.min(100, (spent / 5500) * 100)} className="h-3 [&>div]:bg-orange-500" />
-                      <div className="flex justify-between text-[11px]">
-                        <span className="font-medium tabular-nums">
-                          {money(spent)} <span className="font-normal text-muted-foreground">spent out of</span>
-                        </span>
-                        <span className="text-muted-foreground">$5,500.00</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="rounded-3xl py-5 [--card-spacing:--spacing(5)]">
-                    <CardContent className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="grid size-10 place-items-center rounded-xl bg-muted">
-                            <Icon icon={CreditCardIcon} />
-                          </span>
-                          <span className="font-medium">My Cards</span>
-                        </div>
-                        <Button variant="secondary" size="sm" className="rounded-full" onClick={addCard}>
-                          <Icon icon={Add01Icon} size={12} /> Add new
-                        </Button>
-                      </div>
-                      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pt-3 pb-3">
-                        {cards.map((c) => (
-                          <BankCard
-                            key={c.id}
-                            card={c}
-                            selected={cardId === c.id}
-                            onSelect={() => setCardId(c.id)}
-                            onFreeze={() =>
-                              setCards((cs) => cs.map((x) => (x.id === c.id ? { ...x, frozen: !x.frozen } : x)))
-                            }
-                          />
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Activities */}
-                <Card className="min-w-0 rounded-3xl py-5 [--card-spacing:--spacing(5)]">
-                  <CardContent className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h2 className="text-xl font-medium">Recent Activities</h2>
-                      <div className="flex items-center gap-2">
-                        <div className="relative">
-                          <Icon
-                            icon={Search01Icon}
-                            size={16}
-                            className="absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-                          />
-                          <Input
-                            id="activity-search"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search"
-                            className="h-9 w-44 rounded-full pl-9"
-                          />
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="h-9 rounded-full">
-                              Filter
-                              {statusFilter.length < STATUSES.length && (
-                                <Badge className="size-4 justify-center rounded-full p-0 text-[10px]">
-                                  {statusFilter.length}
-                                </Badge>
-                              )}
-                              <Icon icon={FilterHorizontalIcon} size={14} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44">
-                            <DropdownMenuLabel>Status</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {STATUSES.map((s) => (
-                              <DropdownMenuCheckboxItem
-                                key={s}
-                                checked={statusFilter.includes(s)}
-                                onSelect={(e) => e.preventDefault()}
-                                onCheckedChange={(v) =>
-                                  setStatusFilter((f) => (v ? [...f, s] : f.filter((x) => x !== s)))
-                                }
-                              >
-                                <span className={cn('mr-1 size-1.5 rounded-full', STATUS_DOT[s])} />
-                                {s}
-                              </DropdownMenuCheckboxItem>
-                            ))}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => setStatusFilter(STATUSES)}>Reset filter</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-
-                    {selected.length > 0 && (
-                      <div className="flex items-center justify-between rounded-xl bg-orange-50 px-3 py-2 text-xs text-orange-900 dark:bg-orange-950 dark:text-orange-100">
-                        {selected.length} selected
-                        <div className="flex gap-1">
-                          <Button size="xs" variant="ghost" onClick={() => setSelected([])}>
-                            Clear
-                          </Button>
-                          <Button size="xs" variant="destructive" onClick={() => deleteRows(selected)}>
-                            <Icon icon={Delete02Icon} size={12} /> Delete
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="overflow-hidden rounded-2xl border">
-                      <Table>
-                        <TableHeader className="bg-muted">
-                          <TableRow className="hover:bg-transparent">
-                            <TableHead className="w-10">
-                              <Checkbox
-                                checked={allSelected}
-                                onCheckedChange={(v) =>
-                                  setSelected((s) =>
-                                    v
-                                      ? [...new Set([...s, ...rows.map((r) => r.id)])]
-                                      : s.filter((id) => !rows.some((r) => r.id === id)),
-                                  )
-                                }
-                                aria-label="Select all"
-                              />
-                            </TableHead>
-                            <TableHead>Order ID</TableHead>
-                            <TableHead>Activity</TableHead>
-                            <TableHead>
-                              <button type="button" className="flex items-center gap-1" onClick={() => toggleSort('price')}>
-                                Price {sortIcon('price')}
-                              </button>
-                            </TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>
-                              <button type="button" className="flex items-center gap-1" onClick={() => toggleSort('date')}>
-                                Date {sortIcon('date')}
-                              </button>
-                            </TableHead>
-                            <TableHead className="w-8" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {rows.length === 0 && (
-                            <TableRow className="hover:bg-transparent">
-                              <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                                No activities match your filters.
-                              </TableCell>
-                            </TableRow>
-                          )}
-                          {rows.map((a) => (
-                            <TableRow key={a.id} data-state={selected.includes(a.id) ? 'selected' : undefined}>
-                              <TableCell>
-                                <Checkbox
-                                  checked={selected.includes(a.id)}
-                                  onCheckedChange={(v) =>
-                                    setSelected((s) => (v ? [...s, a.id] : s.filter((x) => x !== a.id)))
-                                  }
-                                  aria-label={`Select ${a.id}`}
-                                />
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">{a.id}</TableCell>
-                              <TableCell>
-                                <span className="flex items-center gap-2.5 font-medium">
-                                  <span className={cn('grid size-6 place-items-center rounded-md', a.color)}>
-                                    <Icon icon={a.icon} size={14} />
-                                  </span>
-                                  {a.name}
-                                </span>
-                              </TableCell>
-                              <TableCell className="tabular-nums">{moneyInt(a.price)}</TableCell>
-                              <TableCell>
-                                <span className="flex items-center gap-1.5">
-                                  <span className={cn('size-1.5 rounded-full', STATUS_DOT[a.status])} />
-                                  {a.status}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">{fmtDate(a.date)}</TableCell>
-                              <TableCell>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${a.id}`}>
-                                      <Icon icon={MoreHorizontalIcon} size={16} className="text-muted-foreground" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                      onSelect={() =>
-                                        setToast(`${a.name} — ${moneyInt(a.price)} · ${a.status}`)
-                                      }
-                                    >
-                                      <Icon icon={ViewIcon} size={16} /> View details
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={() => {
-                                        navigator.clipboard?.writeText(a.id)
-                                        setToast(`Copied ${a.id}`)
-                                      }}
-                                    >
-                                      <Icon icon={Copy01Icon} size={16} /> Copy ID
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem variant="destructive" onSelect={() => deleteRows([a.id])}>
-                                      <Icon icon={Delete02Icon} size={16} /> Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+<div ref={containerRef} className="relative mt-5">
+                {!locked && <CellGrid cols={COLS[bp]} rows={rowsShown} visible={adjusting} />}
+                {mounted && (
+                  <Responsive
+                    className={cn('widget-grid', !locked && 'is-editing')}
+                    width={width}
+                    breakpoints={BREAKPOINTS}
+                    cols={COLS}
+                    layouts={layouts}
+                    onLayoutChange={(_, all) => setLayouts(all as Layouts)}
+                    onResizeStart={() => setResizing(true)}
+                    onResizeStop={() => setResizing(false)}
+                    onDragStart={(_l, _o, n, _p, e, el) => {
+                      setDragging(n?.i as WidgetKey)
+                      swing.start(el, e)
+                    }}
+                    onDrag={(_l, _o, _n, _p, e) => {
+                      swing.move(e)
+                      setOverDelete(pointerOverDelete(e))
+                    }}
+                    onDragStop={(_l, _o, n, _p, e) => {
+                      if (n && pointerOverDelete(e)) {
+                        setHidden((h) => [...h, n.i as WidgetKey])
+                        setToast('Widget deleted — press Restore to bring it back')
+                      }
+                      swing.stop()
+                      setDragging(null)
+                      setOverDelete(false)
+                    }}
+                    rowHeight={ROW_H}
+                    margin={[GAP, GAP]}
+                    containerPadding={[0, 0]}
+                    dragConfig={{
+                      enabled: !locked,
+                      handle: '.drag-handle',
+                    }}
+                    resizeConfig={{ enabled: !locked, handles: ['se'] }}
+                  >
+                    {WIDGETS.filter((w) => !hidden.includes(w.key)).map((w) => widgetEls[w.key])}
+                  </Responsive>
+                )}
               </div>
             </main>
           </div>
@@ -1146,6 +1649,24 @@ export default function App() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Floating delete zone: appears while a widget is being dragged */}
+        <div
+          ref={deleteZone}
+          aria-hidden={!dragging}
+          className={cn(
+            'pointer-events-none fixed bottom-8 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2.5 rounded-full border px-6 py-3.5 text-sm font-medium shadow-xl backdrop-blur transition-all duration-200',
+            dragging ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0',
+            overDelete
+              ? 'scale-110 border-red-500 bg-red-500 text-white'
+              : 'border-red-200 bg-white/90 text-red-600 dark:border-red-900 dark:bg-neutral-900/90 dark:text-red-400',
+          )}
+        >
+          <Icon icon={Delete02Icon} size={18} />
+          {overDelete ? 'Release to delete' : 'Drag here to delete'}
+        </div>
+
+        <WidgetGallery open={galleryOpen} items={galleryItems} onClose={() => setGalleryOpen(false)} onAdd={handleGalleryAdd} />
 
         {/* Toast */}
         <div

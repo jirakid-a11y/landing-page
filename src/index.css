@@ -128,3 +128,55 @@
     @apply font-sans;
     }
 }
+/* Widget grid: visible cell grid behind boxes (drawn by <CellGrid />). */
+.widget-grid:not(.is-editing) .edit-only {
+  display: none;
+}
+/* iPadOS-style resize affordance: a short arc hugging the widget's rounded
+   bottom-right corner. Faint while editing, brighter when pointed at. */
+.widget-grid .react-grid-item > .react-resizable-handle {
+  width: 30px;
+  height: 30px;
+  z-index: 20;
+  opacity: 0;
+}
+.widget-grid .react-grid-item > .react-resizable-handle::after {
+  /* A short, round-capped arc that follows the card's rounded corner
+     (r = 22px, drawn 2px inside the edge) and fits in a 14x14px box. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  background-color: color-mix(in oklab, var(--foreground) 30%, transparent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cpath d='M26.54 15.5A20 20 0 0 1 15.5 26.54' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cpath d='M26.54 15.5A20 20 0 0 1 15.5 26.54' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+.widget-grid .react-grid-item > .react-resizable-handle:hover::after,
+.widget-grid .react-grid-item.resizing > .react-resizable-handle::after {
+  background-color: color-mix(in oklab, var(--foreground) 60%, transparent);
+  transform: scale(1.12);
+  transform-origin: bottom right;
+}
+.widget-grid.is-editing .react-grid-item > .react-resizable-handle-se {
+  opacity: 1;
+}
+.widget-grid .react-grid-item.react-grid-placeholder {
+  background: oklch(0.78 0.13 55);
+  border-radius: 1.5rem;
+  opacity: 0.3;
+}
+.widget-grid .react-grid-item.react-draggable-dragging [data-slot='card'] {
+  /* transform (swing + lift) is driven from JS */
+  box-shadow: 0 24px 50px -12px rgb(234 100 20 / 0.4);
+  outline: 2px solid oklch(0.72 0.17 52);
+}
+.widget-grid .react-grid-item.resizing [data-slot='card'] {
+  box-shadow: 0 18px 40px -12px rgb(234 100 20 / 0.35);
+  outline: 2px solid oklch(0.72 0.17 52);
+}
+.widget-grid .react-grid-item [data-slot='card'] {
+  transition: box-shadow 150ms ease;
+}
